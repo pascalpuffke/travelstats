@@ -10,7 +10,7 @@ group = "de.pascalpuffke"
 version = "1.0-SNAPSHOT"
 
 application {
-    mainClass.set("main")
+    mainClass.set("MainKt")
 }
 
 repositories {
