@@ -992,6 +992,54 @@ fun printOperators(term: Terminal, data: TraewellingJson) {
     })
 }
 
+@Serializable
+data class JsonDefinedLine(val line: String, val from: String?, val to: String?)
+
+@Serializable
+data class JsonDefinedOperator(
+    val name: String,
+    val types: List<String>,
+    val lines: List<JsonDefinedLine> = emptyList(),
+    @SerialName("match-all-stations-containing") val stationMatches: List<String> = emptyList(),
+    val regex: String? = null,
+)
+
+@OptIn(ExperimentalSerializationApi::class)
+fun getOperatorJsonDefined(trainLine: String, origin: String, destination: String): String? {
+    // TODO Stop re-parsing the JSON file on every invocation.
+    val json = Json {}
+    val operators = json.decodeFromStream<List<JsonDefinedOperator>>(Path.of("operators.json").inputStream())
+
+    operators.filter { operator ->
+        operator.types.any {
+            when {
+                operator.regex != null -> return@any Regex(operator.regex).matches(trainLine)
+                trainLine.contains(' ') -> return@any trainLine.split(' ').first() == it
+                else -> return@any trainLine.startsWith(it)
+            }
+        }
+    }.forEach { operator ->
+        when {
+            operator.stationMatches.isNotEmpty() -> {
+                if (operator.stationMatches.any { origin.contains(it) || destination.contains(it) }) {
+                    return operator.name
+                }
+            }
+
+            operator.lines.isNotEmpty() -> {
+                if (operator.lines.any { it.line == trainLine && (it.from == null || it.from == origin) && (it.to == null || it.to == destination) }) {
+                    return operator.name
+                }
+            }
+
+            else -> {
+                return operator.name
+            }
+        }
+    }
+
+    return null
+}
 
 @OptIn(ExperimentalSerializationApi::class)
 fun main(args: Array<String>) {
