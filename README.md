@@ -15,7 +15,7 @@ val anotherOne = json.decodeFromStream<TraewellingJson>(
 
 I told you to not use this yet!
 
-## Build using Gradle
+## Build using Gradle (command line)
 
 Make sure a recent version of Gradle is installed. Tested on Gradle 8.3.
 
@@ -26,6 +26,24 @@ If you get an error like `Unsupported class file major version xx`, you're not u
 2. **Change directory**: `cd travelstats`
 3. **Build**: `gradle build` (This will show a lot of warnings. This is due to poor programming, and not your fault. Ignore (or fix) them.)
 4. **Run**: `gradle run --args="/path/to/Traewelling_export_xxxxxxx.json"`
+
+## Build in an IDE (IntelliJ IDEA)
+
+IntelliJ respects our Gradle build script and fetches dependencies automatically.
+
+Open the Gradle tab and click **Reload All Gradle Projects** (the first option, top-left corner).
+This will generate a bunch of tasks, the two we are interested in are `build/build` and `application/run`.
+
+Again, you may get an error message if you use an outdated JDK version.
+Fix the error by opening the **Settings** page and navigating to **Build, Execution, Deployment** > **Build Tools** > **Gradle**.
+Change the **Gradle JVM** option at the bottom to at least version 17, and try again.
+
+Start the application by double-clicking the `run` task in the `application` category.
+After that, your selected **Run/Debug Configuration** will automatically be set, and from now on you can run the task
+simply by pressing `Shift`+`F10` (`Cmd`+`R` on macOS).
+
+Pass the json export file by editing the run configuration (**Select Run/Debug Configuration** > **Edit Configurations...**)
+and replace the **Tasks and arguments** field with `run --args="/path/to/Traewelling_export_xxxxxxx.json"`
 
 ## TODO
 - [ ] Variable amount of input .json files
