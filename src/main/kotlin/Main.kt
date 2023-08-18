@@ -1007,15 +1007,15 @@ data class JsonDefinedOperator(
 @OptIn(ExperimentalSerializationApi::class)
 fun getOperatorJsonDefined(trainLine: String, origin: String, destination: String): String? {
     // TODO Stop re-parsing the JSON file on every invocation.
-    val json = Json {}
+    val json = Json { ignoreUnknownKeys = true }
     val operators = json.decodeFromStream<List<JsonDefinedOperator>>(Path.of("operators.json").inputStream())
 
     operators.filter { operator ->
         operator.types.any {
-            when {
-                operator.regex != null -> return@any Regex(operator.regex).matches(trainLine)
-                trainLine.contains(' ') -> return@any trainLine.split(' ').first() == it
-                else -> return@any trainLine.startsWith(it)
+            return@any when {
+                operator.regex != null -> Regex(operator.regex).matches(trainLine)
+                trainLine.contains(' ') -> trainLine.split(' ').first() == it
+                else -> trainLine.startsWith(it)
             }
         }
     }.forEach { operator ->
