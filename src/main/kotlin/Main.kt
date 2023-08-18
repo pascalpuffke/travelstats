@@ -1027,14 +1027,23 @@ fun getOperatorJsonDefined(trainLine: String, origin: String, destination: Strin
             }
 
             operator.lines.isNotEmpty() -> {
-                if (operator.lines.any { it.line == trainLine && (it.from == null || it.from == origin) && (it.to == null || it.to == destination) }) {
-                    return operator.name
+                val target = JsonDefinedLine(trainLine, origin, destination)
+
+                for (line in operator.lines) {
+                    when {
+                        line.line != trainLine -> continue
+                        line.from == null && line.to == null -> continue
+                        line == target || JsonDefinedLine(
+                            line.line, from = line.to, to = line.from
+                        ) == target -> return operator.name
+
+                        line.from == null && (line.to == origin || line.to == destination) -> return operator.name
+                        line.to == null && (line.from == origin || line.from == destination) -> return operator.name
+                    }
                 }
             }
 
-            else -> {
-                return operator.name
-            }
+            else -> return operator.name
         }
     }
 
