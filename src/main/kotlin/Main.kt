@@ -15,6 +15,8 @@ import java.nio.file.*
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
+import kotlin.io.path.Path
+import kotlin.io.path.exists
 import kotlin.io.path.inputStream
 import kotlin.math.roundToInt
 import kotlin.system.*
@@ -1004,12 +1006,12 @@ data class JsonDefinedOperator(
     val regex: String? = null,
 )
 
-@OptIn(ExperimentalSerializationApi::class)
-fun getOperatorJsonDefined(trainLine: String, origin: String, destination: String): String? {
-    // TODO Stop re-parsing the JSON file on every invocation.
-    val json = Json { ignoreUnknownKeys = true }
-    val operators = json.decodeFromStream<List<JsonDefinedOperator>>(Path.of("operators.json").inputStream())
-
+fun getOperatorJsonDefined(
+    operators: List<JsonDefinedOperator>,
+    trainLine: String,
+    origin: String,
+    destination: String,
+): String? {
     operators.filter { operator ->
         operator.types.any {
             return@any when {
@@ -1051,39 +1053,54 @@ fun getOperatorJsonDefined(trainLine: String, origin: String, destination: Strin
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-fun main(args: Array<String>) {
-    val term = Terminal(tabWidth = 4, width = Int.MAX_VALUE, interactive = false)
-    if (args.isEmpty()) exitError(1, "error: no input file")
+fun loadTraewellingData(files: List<String>): TraewellingJson? {
+    if (files.isEmpty()) return null
 
-    val path = Path.of(args.first())
-    if (Files.notExists(path)) exitError(2, "error: input file does not exist: $path")
-
+    val paths = files.map(::Path).filter { it.exists() }
+    if (paths.size != files.size) eprintln("warning: ${files.size - paths.size} file(s) do not exist")
+    var oldestMeta: Meta? = null
+    var newestMeta: Meta? = null
+    val entries = mutableSetOf<DataEntry>()
     val json = Json { ignoreUnknownKeys = true }
-    val preData = try {
-        json.decodeFromStream<TraewellingJson>(path.inputStream())
-    } catch (e: SerializationException) {
-        exitError(3, "error deserializing data: ${e.message}")
-    } catch (e: IOException) {
-        exitError(3, "error reading file: ${e.message}")
-    } catch (e: Throwable) {
-        exitError(3, "error: ${e.message}")
-    }
-    if (preData.entries.isEmpty()) exitError(3, "error: empty data")
 
-    val anotherOne = json.decodeFromStream<TraewellingJson>(
-        Path.of("/home/floppa/Documents/luna-07-2023-bis-08-2023.json").inputStream()
+    for (path in paths) {
+        val data = try {
+            json.decodeFromStream<TraewellingJson>(path.inputStream())
+        } catch (e: SerializationException) {
+            eprintln("error deserializing data, skipping: ${e.message}")
+            continue
+        } catch (e: IOException) {
+            eprintln("error reading file, skipping: ${e.message}")
+            continue
+        } catch (e: Throwable) {
+            eprintln("unknown error, skipping: ${e.message}")
+            continue
+        }
+
+        val meta = data.meta
+        if (oldestMeta == null) oldestMeta = meta
+        if (newestMeta == null) newestMeta = meta
+
+        val from = toUnixTime(meta.exportedAt)
+        if (from > toUnixTime(newestMeta.exportedAt)) newestMeta = meta
+        if (from < toUnixTime(oldestMeta.exportedAt)) oldestMeta = meta
+
+        data.entries.forEach { entries += it }
+    }
+
+    requireNotNull(oldestMeta)
+    requireNotNull(newestMeta)
+
+    return TraewellingJson(
+        meta = Meta(
+            user = newestMeta.user, from = oldestMeta.from, to = newestMeta.to, exportedAt = newestMeta.exportedAt
+        ), entries = entries.toTypedArray()
     )
-    val entries = mutableListOf<DataEntry>()
-    preData.entries.forEach { entries.add(it) }
-    anotherOne.entries.forEach { entries.add(it) }
-    val data = TraewellingJson(
-        Meta(
-            user = anotherOne.meta.user,
-            from = preData.meta.from,
-            to = anotherOne.meta.to,
-            exportedAt = anotherOne.meta.exportedAt
-        ), entries.toTypedArray()
-    )
+}
+
+fun main(args: Array<String>) {
+    val term = Terminal(tabWidth = 4, width = Int.MAX_VALUE, interactive = false, ansiLevel = AnsiLevel.TRUECOLOR)
+    val data = loadTraewellingData(args.asList()) ?: exitError(1, "error: no input file")
 
     with(data.meta) {
         term.println("\n${from.dropLast(6).replace('T', ' ')} - ${to.dropLast(6).replace('T', ' ')}\n")

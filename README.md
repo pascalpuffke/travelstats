@@ -2,18 +2,17 @@
 [Träwelling](https://traewelling.de) statistics, but maybe slightly better.
 
 ## Usage
-Don't
+Export one or multiple JSON files from the [Träwelling export page](https://traewelling.de/export).
 
-Alternatively, if you hate yourself: Export exactly two JSON files from the [Träwelling export](https://traewelling.de/export) page.
-Paste the path of the older data as the first, and only, command-line argument.
-Then, put the path of the newer data here, in Main.kt:
-```kotlin
-val anotherOne = json.decodeFromStream<TraewellingJson>(
-  Path.of("/home/.../Documents/some-newer-export.json").inputStream()
-)
+Paste the full paths to each one as command-line arguments. Separate them using spaces.
+
+The program will merge them together automatically, so you don't have to do one mega-export every time you want to use it.
+
+A command may look something like the following:
+
+```shell
+gradle run --args="/home/user/Documents/Traewelling_export_2022-06-01_to_2023-05-31.json /home/user/Documents/Traewelling_export_2023-06-01_to_2023-09-30.json /home/user/Documents/Traewelling_export_2023-09-01_to_2023-09-30.json"
 ```
-
-I told you to not use this yet!
 
 ## Build using Gradle (command line)
 
@@ -46,7 +45,7 @@ Pass the json export file by editing the run configuration (**Select Run/Debug C
 and replace the **Tasks and arguments** field with `run --args="/path/to/Traewelling_export_xxxxxxx.json"`
 
 ## TODO
-- [ ] Variable amount of input .json files
+- [x] Variable amount of input .json files
 - [ ] Define operators in external, configurable JSON files instead of hard-coding
   - [ ] Perhaps even throw everything away and use some external API
 - [ ] GUI (lmao god help me)
