@@ -3,28 +3,37 @@ package traewelling
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-typealias Metres = Int
-typealias Minutes = Int
+// NOTE: ALL numbers are stored as Long. This is excessive and does not seem correct. BUT:
+//       Some fields got huge and I ran into issues where the deserializer could not parse
+//       huge numbers as 32-bit integers anymore. As I didn't feel like finding the exact ones
+//       which could potentially overflow, I simply changed all ints to longs. Feel free to optimize
+//       later, for now I don't care.
+
+typealias Metres = Long
+typealias Minutes = Long
 
 @Serializable
 data class User(
-    val id: Int,
+    val id: Long,
     val displayName: String,
     val username: String,
     val profilePicture: String, // URL
     val trainDistance: Metres,
     val trainDuration: Minutes,
-    val trainSpeed: Double, // ((trainDistance / 1000) / (trainDuration / 60) / 1000) km/h
-    val points: Int,
+    // trainSpeed is deprecated since Nov 2022
+    // val trainSpeed: Double, // ((trainDistance / 1000) / (trainDuration / 60) / 1000) km/h
+    val points: Long,
     val twitterUrl: String?,
     val mastodonUrl: String?,
     val privateProfile: Boolean,
-    //val privacyHideDays: Int?,
+    val preventIndex: Boolean,
+    @SerialName("likes_enabled") // Why is this snake_case?
+    val likesEnabled: Boolean,
+    //val privacyHideDays: Long?,
     val userInvisibleToMe: Boolean,
     val muted: Boolean,
     val following: Boolean,
     val followPending: Boolean,
-    val preventIndex: Boolean,
 )
 
 @Serializable
@@ -38,10 +47,10 @@ data class Meta(
 
 @Serializable
 data class TrainOriginOrDestination(
-    val id: Int,
+    val id: Long,
     val name: String,
     val rilIdentifier: String?, // Unknown type
-    val evaIdentifier: Int,
+    val evaIdentifier: Long,
     val arrival: String,
     val arrivalPlanned: String?,
     val arrivalReal: String?,
@@ -58,43 +67,50 @@ data class TrainOriginOrDestination(
     val cancelled: Boolean,
 )
 
+@Serializable
+data class TrainOperator(
+    val identifier: String,
+    val name: String,
+)
+
 // 'Train' isn't entirely accurate, as e.g. bus journeys are recorded too
 @Serializable
 data class Train(
-    val trip: Int,
+    val trip: Long,
     val hafasId: String,
     val category: String,
     val number: String,
     val lineName: String,
+    val journeyNumber: Long?,
     val distance: Metres,
-    val points: Int,
+    val points: Long,
     val duration: Minutes,
-    val speed: Double,
+    // val speed: Double,
+    val manualDeparture: String?,
+    val manualArrival: String?,
     val origin: TrainOriginOrDestination,
     val destination: TrainOriginOrDestination,
+    val operator: TrainOperator?,
 )
 
-// Thank you Traewelling for breaking my deserialization code and causing headaches because I had no
-// fucking idea why this suddenly broke. It appears they now changed the 'station' field at 'status.event'
-// from a simple (nullable) string to an entire struct with a lot more data, for whatever reason.
 @Serializable
 data class EventStation(
-    val id: Int,
+    val id: Long,
     val name: String,
     val latitude: Double,
     val longitude: Double,
-    val ibnr: Int,
+    val ibnr: Long,
     val rilIdentifier: String?,
 )
 
 @Serializable
 data class Event(
-    val id: Int,
+    val id: Long,
     val name: String,
     val slug: String,
-    val hashtag: String,
-    val host: String,
-    val url: String,
+    val hashtag: String?,
+    val host: String?,
+    val url: String?,
     val begin: String,
     val end: String,
     val station: EventStation?
@@ -102,17 +118,18 @@ data class Event(
 
 @Serializable
 data class Status(
-    val id: Int,
+    val id: Long,
     val body: String,
     val type: String,
-    val user: Int,
+    val user: Long,
     val username: String,
     val profilePicture: String,
     val preventIndex: Boolean,
-    val business: Int, // Why isn't this a bool?
-    val visibility: Int, // Private, follower only, unlisted, public?
-    val likes: Int,
+    val business: Long, // Why isn't this a bool?
+    val visibility: Long, // Private, follower only, unlisted, public?
+    val likes: Long,
     val liked: Boolean,
+    val isLikable: Boolean,
     val createdAt: String,
     val train: Train,
     val event: Event?,
@@ -120,10 +137,10 @@ data class Status(
 
 @Serializable
 data class Stopover(
-    val id: Int,
+    val id: Long,
     val name: String,
     val rilIdentifier: String?,
-    val evaIdentifier: Int,
+    val evaIdentifier: Long,
     val arrival: String,
     val arrivalPlanned: String?, // Null for first stop
     val arrivalReal: String?,
@@ -142,10 +159,11 @@ data class Stopover(
 
 @Serializable
 data class Trip(
-    val id: Int,
+    val id: Long,
     val category: String,
     val number: String,
     val lineName: String,
+    val journeyNumber: Long?,
     val origin: TripOriginOrDestination,
     val destination: TripOriginOrDestination,
     val stopovers: Array<Stopover>
@@ -168,7 +186,7 @@ data class Trip(
     }
 
     override fun hashCode(): Int {
-        var result = id
+        var result = id.toInt()
         result = 31 * result + category.hashCode()
         result = 31 * result + number.hashCode()
         result = 31 * result + lineName.hashCode()
@@ -181,11 +199,11 @@ data class Trip(
 
 @Serializable
 data class TripOriginOrDestination(
-    val id: Int,
+    val id: Long,
     val name: String,
     val latitude: Double,
     val longitude: Double,
-    val ibnr: Int,
+    val ibnr: Long,
     val rilIdentifier: String?,
 )
 
