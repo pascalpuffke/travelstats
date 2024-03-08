@@ -1,0 +1,462 @@
+[
+  {
+    "name": "Dresdner Verkehrsbetriebe",
+    "types": [
+      "STR"
+    ],
+    "match-all-stations-containing": [
+      "Dresden"
+    ]
+  },
+  {
+    "name": "Freiburger Verkehrs AG",
+    "types": [
+      "STR"
+    ],
+    "match-all-stations-containing": [
+      "Freiburg im Breisgau"
+    ]
+  },
+  {
+    "name": "Stadtwerke Verkehrsgesellschaft Frankfurt am Main mbH",
+    "types": [
+      "STR", "U"
+    ],
+    "match-all-stations-containing": [
+      "Frankfurt a.M."
+    ]
+  },
+  {
+    "name": "Hamburger Hochbahn",
+    "types": [
+      "U", "Bus"
+    ],
+    "match-all-stations-containing": [
+      "Hamburg"
+    ]
+  },
+  {
+    "name": "VAG Verkehrs-Aktiengesellschaft Nürnberg",
+    "types": [
+      "STR", "U", "Bus"
+    ],
+    "match-all-stations-containing": [
+      "Nürnberg", "Fürth"
+    ]
+  },
+  {
+    "name": "Münchner Verkehrs- und Tarifverbund",
+    "types": [
+      "STR",
+      "U"
+    ],
+    "match-all-stations-containing": [
+      "München"
+    ]
+  },
+  {
+    "name": "Verkehrs- und Betriebsgesellschaft Gera",
+    "types": [
+      "STR"
+    ],
+    "match-all-stations-containing": [
+      "Gera"
+    ]
+  },
+  {
+    "name": "Naumburger Straßenbahn GmbH",
+    "types": [
+      "STR"
+    ],
+    "match-all-stations-containing": [
+      "Naumburg (Saale)"
+    ]
+  },
+  {
+    "name": "Leipziger Verkehrsbetriebe",
+    "types": [
+      "STR"
+    ],
+    "match-all-stations-containing": [
+      "Leipzig",
+      "Schkeuditz"
+    ]
+  },
+  {
+    "name": "Erfurter Verkehrs-AG",
+    "types": [
+      "STR",
+      "Bus"
+    ],
+    "match-all-stations-containing": [
+      "Erfurt"
+    ]
+  },
+  {
+    "name": "Abellio Rail Mitteldeutschland",
+    "types": [
+      "HBX",
+      "RE",
+      "RB",
+      "S"
+    ],
+    "lines": [
+      {
+        "line": "S 7",
+        "from": "Halle(Saale)Hbf",
+        "to": "Lutherstadt Eisleben"
+      },
+      {
+        "line": "RB 20",
+        "from": null,
+        "to": "Leipzig Hbf"
+      },
+      {
+        "line": "RB 20",
+        "from": "Eisenach",
+        "to": "Halle(Saale)Hbf"
+      },
+      {
+        "line": "RB 25",
+        "from": "Halle(Saale)Hbf",
+        "to": "Saalfeld(Saale)"
+      },
+      {
+        "line": "RB 35",
+        "from": "Stendal Hbf",
+        "to": "Wolfsburg Hbf"
+      },
+      {
+        "line": "RB 36",
+        "from": "Magdeburg Hbf",
+        "to": "Wolfsburg Hbf"
+      },
+      {
+        "line": "RB 59",
+        "from": "Erfurt Hbf",
+        "to": "Sangerhausen"
+      },
+      {
+        "line": "RE 4",
+        "from": "Halle(Saale)Hbf",
+        "to": "Goslar"
+      },
+      {
+        "line": "RE 6",
+        "from": "Magdeburg Hbf",
+        "to": "Wolfsburg Hbf"
+      },
+      {
+        "line": "RE 9",
+        "from": "Halle(Saale)Hbf",
+        "to": null
+      },
+      {
+        "line": "RE 10",
+        "from": "Magdeburg Hbf",
+        "to": "Erfurt Hbf"
+      },
+      {
+        "line": "RE 11",
+        "from": null,
+        "to": "Thale Hbf"
+      },
+      {
+        "line": "RE 16",
+        "from": "Halle(Saale)Hbf",
+        "to": null
+      },
+      {
+        "line": "RE 17",
+        "from": "Erfurt Hbf",
+        "to": "Naumburg(Saale)Hbf"
+      },
+      {
+        "line": "RE 21",
+        "from": "Goslar",
+        "to": null
+      },
+      {
+        "line": "RE 31",
+        "from": "Blankenburg(Harz)",
+        "to": null
+      }
+    ]
+  },
+  {
+    "name": "alex - Die Länderbahn",
+    "types": [
+      "ALX"
+    ]
+  },
+  {
+    "name": "Bayrische Regiobahn",
+    "types": [
+      "BRB"
+    ]
+  },
+  {
+    "name": "Bremer Straßenbahn AG",
+    "types": [
+      "STR",
+      "Bus"
+    ],
+    "regex": ".*\\b\\d{1,2}$",
+    "match-all-stations-containing": [
+      "Bremen"
+    ]
+  },
+  {
+    "name": "Berliner Verkehrsbetriebe",
+    "types": [
+      "STR",
+      "U",
+      "Bus"
+    ],
+    "match-all-stations-containing": [
+      "Berlin"
+    ]
+  },
+  {
+    "name": "České dráhy",
+    "types": [
+      "EC"
+    ],
+    "match-all-stations-containing": [
+      "Praha hl.n."
+    ],
+    "note": "TODO: lmao"
+  },
+  {
+    "name": "DB Fernverkehr AG",
+    "types": [
+      "IC",
+      "ICE"
+    ],
+    "note": "TODO: THIS ASSIGNS DB FERNVERKEHR FOR EVERY IC SERVICE, WHICH IS WRONG"
+  },
+  {
+    "name": "DB Regio AG NRW",
+    "types": [
+      "RE",
+      "RB"
+    ],
+    "lines": [
+      {
+        "line": "RE 9",
+        "from": "Aachen Hbf",
+        "to": null
+      },
+      {
+        "line": "RB 20",
+        "from": "Stolberg(Rheinl)Hbf",
+        "to": null
+      },
+      {
+        "line": "RB 24",
+        "from": "Kall",
+        "to": null
+      },
+      {
+        "line": "RB 25",
+        "from": "Overath",
+        "to": null
+      },
+      {
+        "line": "RB 27",
+        "from": "Koblenz Hbf",
+        "to": null
+      },
+      {
+        "line": "RB 33",
+        "from": "Aachen Hbf",
+        "to": null
+      }
+    ]
+  },
+  {
+    "name": "DB Regio AG Nord",
+    "types": [
+      "RE",
+      "RB"
+    ],
+    "lines": [
+      {
+        "line": "RE 6",
+        "from": "Westerland(Sylt)",
+        "to": null
+      },
+      {
+        "line": "RE 7",
+        "from": "Kiel Hbf",
+        "to": null
+      },
+      {
+        "line": "RE 7",
+        "from": "Flensburg",
+        "to": null
+      },
+      {
+        "line": "RE 8",
+        "from": "Lübeck Hbf",
+        "to": null
+      },
+      {
+        "line": "RE 70",
+        "from": "Kiel Hbf",
+        "to": null
+      },
+      {
+        "line": "RE 80",
+        "from": "Lübeck Hbf",
+        "to": null
+      },
+      {
+        "line": "RB 85",
+        "from": "Lübeck Hbf",
+        "to": null
+      },
+      {
+        "line": "RE 86",
+        "from": "Lübeck-Travemünde Strand",
+        "to": null
+      },
+      {
+        "line": "RB 86",
+        "from": "Lübeck-Travemünde Strand",
+        "to": null
+      }
+    ]
+  },
+  {
+    "name": "DB Regio AG Nordost",
+    "types": [
+      "RE",
+      "RB",
+      "S",
+      "FEX"
+    ],
+    "lines": [
+      {
+        "line": "RE 1",
+        "from": "Hamburg Hbf",
+        "to": "Rostock Hbf"
+      }
+    ]
+  },
+  {
+    "name": "trilex - Die Länderbahn",
+    "types": [
+      "TLX",
+      "TL"
+    ]
+  },
+  {
+    "name": "Hallesche Verkehrs-AG",
+    "types": [
+      "STR",
+      "Bus"
+    ],
+    "regex": "^(STR|Bus) (E|\\d{1,2})$",
+    "match-all-stations-containing": [
+      "Halle",
+      "Bad Dürrenberg"
+    ]
+  },
+  {
+    "name": "Omnibusbetrieb Saalekreis",
+    "types": [
+      "Bus"
+    ],
+    "regex": "^Bus (3\\d{2}|[4-9]\\d{2})$",
+    "match-all-stations-containing": [
+      "Halle"
+    ]
+  },
+  {
+    "name": "DB Regio AG Südost",
+    "types": [
+      "S",
+      "RE",
+      "RB"
+    ],
+    "lines": [
+      {
+        "line": "RE 30",
+        "from": "Halle(Saale)Hbf",
+        "to": "Magdeburg Hbf"
+      },
+      {
+        "line": "RE 20",
+        "from": "Uelzen",
+        "to": null
+      }
+    ]
+  },
+  {
+    "name": "S-Bahn Berlin",
+    "types": [
+      "S"
+    ],
+    "match-all-stations-containing": [
+      "Berlin",
+      "Bernau",
+      "Potsdam"
+    ]
+  },
+  {
+    "name": "erixx",
+    "types": [
+      "erx"
+    ]
+  },
+  {
+    "name": "trilex - Die Länderbahn",
+    "types": [
+      "TLX",
+      "TL"
+    ]
+  },
+  {
+    "name": "Nordwestbahn",
+    "types": [
+      "NWB"
+    ]
+  },
+  {
+    "name": "Verkehrs- und Tarifverbund Stuttgart GmbH",
+    "types": [
+      "STB",
+      "Bus"
+    ],
+    "match-all-stations-containing": [
+      "Stuttgart"
+    ]
+  },
+  {
+    "name": "Verkehrsbetrieb Potsdam GmbH",
+    "types": [
+      "STR",
+      "Bus"
+    ],
+    "match-all-stations-containing": [
+      "Potsdam"
+    ]
+  },
+  {
+    "name": "Westfalenbahn",
+    "types": [
+      "WFB"
+    ]
+  },
+  {
+    "name": "Würzburger Versorgungs- und Verkehrs-GmbH",
+    "types": [
+      "STR",
+      "Bus"
+    ],
+    "match-all-stations-containing": [
+      "Würzburg"
+    ]
+  }
+]
