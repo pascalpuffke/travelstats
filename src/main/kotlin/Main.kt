@@ -1,29 +1,63 @@
-@file:Suppress("SpellCheckingInspection")
+@file:Suppress("SpellCheckingInspection") @file:OptIn(ExperimentalSerializationApi::class)
 
-import Operator.Companion.Information
-import com.github.ajalt.mordant.rendering.*
+import com.github.ajalt.mordant.rendering.AnsiLevel
+import com.github.ajalt.mordant.rendering.BorderType
+import com.github.ajalt.mordant.rendering.TextColors
 import com.github.ajalt.mordant.rendering.TextColors.*
-import com.github.ajalt.mordant.rendering.TextStyles.*
-import com.github.ajalt.mordant.table.*
+import com.github.ajalt.mordant.rendering.TextStyle
+import com.github.ajalt.mordant.rendering.TextStyles.bold
+import com.github.ajalt.mordant.rendering.TextStyles.underline
+import com.github.ajalt.mordant.table.Borders
+import com.github.ajalt.mordant.table.table
 import com.github.ajalt.mordant.terminal.Terminal
-import com.github.ajalt.mordant.widgets.Padding
-import kotlinx.serialization.*
-import kotlinx.serialization.json.*
-import traewelling.*
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
+import traewelling.DataEntry
+import traewelling.Meta
+import traewelling.TraewellingJson
+import traewelling.TrainOriginOrDestination
 import java.io.IOException
-import java.nio.file.*
+import java.nio.file.Path
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
-import kotlin.io.path.Path
 import kotlin.io.path.exists
 import kotlin.io.path.inputStream
+import kotlin.io.path.notExists
 import kotlin.math.roundToInt
-import kotlin.system.*
+import kotlin.system.exitProcess
 
 private const val TIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ssxxxxx"
-private const val TOP_LIMIT = Int.MAX_VALUE
 private const val ON_TIME_RANGE_SECONDS = 60
+
+val LONG_DISTANCE_PREFIXES = setOf(
+    "IC", "ICE", "RJ", "RJX", "NJ", "EC", "ECE", "EN", "FLX", "TLK"
+)
+
+val REGIONAL_PREFIXES = setOf(
+    "AKN",
+    "BRB",
+    "DWE",
+    "FEX",
+    "IRE",
+    "ME",
+    "MEX",
+    "NBE",
+    "R",
+    "RB",
+    "RE",
+    "REX",
+    "TER",
+    "TL",
+    "TLX",
+    "VBG",
+    "WFB",
+    "erx",
+)
 
 private fun <K, V : Comparable<V>> Map<K, V>.toDescendingSortedList() = this.toList().sortedByDescending { it.second }
 
@@ -61,938 +95,6 @@ private fun exitError(code: Int, message: String): Nothing {
 // For some reason Kotlin style format strings do not support float precision, so we have to do it the Java (or C) way.
 private fun percentageString(n: Int, total: Int, precision: Int = 2) =
     String.format("%.${precision}f", (n / total.toFloat()) * 100)
-
-interface Operator {
-    fun matches(name: String, origin: String, destination: String): Boolean
-    fun name(): String
-
-    companion object {
-        fun matchesTypes(name: String, vararg types: String): Boolean {
-            val split = name.split(' ')
-            if (split.isEmpty()) return false
-            return split.first() in types
-        }
-
-        data class Information(val name: String, val origin: String?, val destination: String?)
-
-        fun matchesAny(info: Information, valid: Set<Information>): Boolean {
-            val otherWay = Information(info.name, info.destination, info.origin)
-            return valid.any {
-                it.name == info.name && (it.origin == info.origin || it.destination == info.destination)
-            } || valid.any {
-                it.name == otherWay.name && (it.origin == otherWay.origin || it.destination == otherWay.destination)
-            }
-        }
-    }
-}
-
-class TLX : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "TLX", "TL")
-
-    override fun name() = "trilex - Die Länderbahn"
-}
-
-class ALX : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "ALX")
-
-    override fun name() = "alex - Die Länderbahn"
-}
-
-class OPX : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "OPX")
-
-    override fun name() = "Oberpfalzbahn - Die Länderbahn"
-}
-
-class ABRM : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (Operator.matchesTypes(name, "HBX")) return true
-
-        if (!Operator.matchesTypes(name, "RE", "RB", "S")) return false
-
-        // https://www.abellio.de/verkehr-aktuell
-        val valid = setOf(
-            Information("S 7", "Halle(Saale)Hbf", "Lutherstadt Eisleben"),
-            Information("RB 20", null, "Leipzig Hbf"),
-            Information("RB 20", "Eisenach", "Halle(Saale)Hbf"),
-            Information("RB 25", "Halle(Saale)Hbf", "Saalfeld(Saale)"),
-            Information("RB 35", "Stendal Hbf", "Wolfsburg Hbf"),
-            Information("RB 36", "Magdeburg Hbf", "Wolfsburg Hbf"),
-            Information("RB 59", "Erfurt Hbf", "Sangerhausen"),
-            Information("RE 4", "Halle(Saale)Hbf", "Goslar"),
-            Information("RE 6", "Magdeburg Hbf", "Wolfsburg Hbf"),
-            Information("RE 9", "Halle(Saale)Hbf", "Kassel-Wilhelmshöhe"),
-            Information("RE 10", "Magdeburg Hbf", "Erfurt Hbf"),
-            Information("RE 11", "Magdeburg Hbf", "Thale Hbf"),
-            Information("RE 11", "Halberstadt", "Thale Hbf"),
-            Information("RE 16", "Halle(Saale)Hbf", null),
-            Information("RE 17", "Erfurt Hbf", "Naumburg(Saale)Hbf"),
-            Information("RE 21", null, "Goslar"),
-            Information("RE 31", null, "Blankenburg(Harz)"),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "Abellio Rail Mitteldeutschland"
-}
-
-class DBRegioAGSuedost : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "RE", "RB", "S")) return false
-
-        if (name.startsWith("S")) {
-            fun anyContains(s: String) = origin.contains(s) || destination.contains(s)
-            // S1, S2, S6, S10
-            if (anyContains("Leipzig")) return true
-            // S3, S5, S5X, S8, S9, S47
-            if (anyContains("Halle") && name != "S 7" /* ABRM */) return true
-            // S1, S2, S8
-            if (anyContains("Dresden") || anyContains("Bad Schandau")) return true
-
-            if (anyContains("Geithain")) return true
-        }
-
-        val valid = setOf(
-            Information("RE 1", "Göttingen", "Glauchau(Sachs)"),
-            Information("RE 2", "Kassel-Wilhelmshöhe", "Erfurt Hbf"),
-            Information("RE 3", "Erfurt Hbf", null),
-            Information("RE 7", "Erfurt Hbf", "Würzburg Hbf"),
-            Information("RE 13", "Magdeburg Hbf", "Leipzig Hbf"),
-            Information("RE 14", "Magdeburg Hbf", "Falkenberg(Elster)"),
-            Information("RE 18", "Halle(Saale)Hbf", "Jena-Göschwitz"),
-            Information("RE 19", "Dresden Hbf", "Kurort Altenberg(Erzgebirge)"),
-            Information("RE 20", "Dresden Hbf", "Schöna(Gr)"),
-            Information("RE 20", null, "Uelzen"),
-            Information("RE 30", "Magdeburg Hbf", "Halle(Saale)Hbf"),
-            Information("RE 50", "Leipzig Hbf", "Dresden Hbf"),
-            Information("RE 55", "Nordhausen", "Erfurt Hbf"),
-            Information("RE 56", "Nordhausen", "Erfurt Hbf"),
-            Information("RE 57", "Bad Kissingen", "Würzburg Hbf"),
-            Information("RB U 28", "Schöna", "Sebnitz(Sachs)"),
-            Information("RB 32", "Stendal Hbf", "Salzwedel"),
-            Information("RB 33", "Dresden Hbf", "Königsbrück"),
-            Information("RB 34", "Dresden Hbf", "Senftenberg"),
-            Information("RB 40", "Braunschweig Hbf", null),
-            Information("RB 51", "Dessau Hbf", "Falkenberg(Elster)"),
-            Information("RB 51", "Lutherstadt Wittenberg Hbf", "Falkenberg(Elster)"),
-            Information("RB 52", "Leinefelde", "Erfurt Hbf"),
-            Information("RB 53", "Bad Langensalza", "Gotha"),
-            Information("RB 71", "Sebnitz(Sachs)", "Pirna"),
-            Information("RB 72", "Kurort Altenberg(Erzgebirge)", "Heidenau"),
-            Information("RB 76", "Weißenfels", "Zeitz"),
-            Information("RB 78", "Querfurt", "Merseburg Hbf"),
-            Information("RB 113", "Leipzig Hbf", "Geithain"),
-            Information("S 1", "Meißen Triebischtal", "Schöna"),
-            Information("S 1", "Schönebeck-Bad Salzelmen", "Wittenberge"),
-            Information("S 4", "Markkleeberg-Gaschwitz", null),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "DB Regio AG Südost"
-}
-
-class DBRegioAGNord : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "RE", "RB", "S")) return false
-
-        val valid = setOf(
-            Information("RE 6", "Westerland(Sylt)", null),
-            Information("RE 7", "Kiel Hbf", null),
-            Information("RE 7", "Flensburg", null),
-            Information("RE 8", "Lübeck Hbf", null),
-            Information("RE 70", "Kiel Hbf", null),
-            Information("RE 80", "Lübeck Hbf", null),
-            Information("RB 85", "Lübeck Hbf", null),
-            Information("RE 86", "Lübeck-Travemünde Strand", null),
-            Information("RB 86", "Lübeck-Travemünde Strand", null),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "DB Regio AG Nord"
-}
-
-// ODEG
-// Operator.Companion.Information("RE 2", "Berlin-Charlottenburg", "Wismar"),
-
-class DBRegioAGNRW : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "RE", "RB", "S")) return false
-
-        val valid = setOf(
-            Information("RE 9", "Aachen Hbf", null),
-            Information("RB 20", "Stolberg (Rheinl) Hbf", null),
-            Information("RB 20", "Stolberg(Rheinl)Hbf", null),
-            Information("RB 24", "Kall", null),
-            Information("RB 25", "Overath", null),
-            Information("RB 27", "Koblenz Hbf", null),
-            Information("RB 33", "Aachen Hbf", null),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "DB Regio AG NRW"
-}
-
-class DBRegioAGNordost : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (name.startsWith("FEX")) return true
-
-        if (!Operator.matchesTypes(name, "RE", "RB", "S")) return false
-
-        if (name.startsWith("S") && origin == "Warnemünde" || destination == "Warnemünde") return true
-
-        val valid = setOf(
-            Information("RE 1", "Hamburg Hbf", "Rostock Hbf"),
-            Information("RE 2", "Nauen", "Cottbus Hbf"),
-            Information("RE 2", "Berlin Ostbahnhof", "Cottbus Hbf"),
-            Information("RE 3", "Schwedt(Oder)", "Lutherstadt Wittenberg Hbf"),
-            Information("RE 3", "Stralsund Hbf", null),
-            Information("RE 3", "Eberswalde Hbf", "Halle(Saale)Hbf"),
-            Information("RE 4", "Lübeck Hbf", "Grambow"),
-            Information("RE 4", "Pasewalk", "Ueckermünde Stadthafen"),
-            Information("RE 4", "Neubrandenburg", "Lübeck Hbf"),
-            Information("RE 4", "Elstal", "Jüterbog"),
-            Information("RE 4", "Stendal Hbf", "Falkenberg(Elster)"),
-            Information("RE 5", null, "Berlin Südkreuz"),
-            Information("RE 6", "Wittenberge", "Berlin-Charlottenburg"),
-            Information("RE 7", "Dessau Hbf", null),
-            Information("RE 7", "Senftenberg", "Königs Wusterhausen"),
-            Information("RE 7", "Stralsund Hbf", "Greifswald"),
-            Information("RE 10", "Leipzig Hbf", null),
-            Information("RB 10", "Nauen", "Berlin Südkreuz"),
-            Information("RB 11", "Wismar", "Tessin"),
-            Information("RE 11", "Leipzig Hbf", "Hoyerswerda"),
-            Information("RB 12", "Bad Doberan", "Ostseeheilbad Graal-Müritz"),
-            Information("RB 12", "Rostock Hbf", "Ribnitz-Damgarten West"),
-            Information("RE 13", "Cottbus Hbf", "Elsterwerda"),
-            Information("RB 14", "Nauen", "Berlin Südkreuz"),
-            Information("RE 15", "Hoyerswerda", "Dresden Hbf"),
-            Information("RB 17", null, "Ludwigslust"),
-            Information("RB 18", "Bad Kleinen", "Schwerin Hbf"),
-            Information("RE 18", "Cottbus Hbf", "Dresden-Neustadt"),
-            Information("RB 20", "Oranienburg", "Potsdam Griebnitzsee"),
-            Information("RB 21", "Potsdam Hbf", "Berlin Gesundbrunnen"),
-            Information("RB 22", "Potsdam Griebnitzsee", "Königs Wusterhausen"),
-            Information("RB 23", "Golm", "Flughafen BER - Terminal 1-2"),
-            Information("RB 23", "Züssow", "Swinoujscie Centrum"),
-            Information("RB 24 Nord", "Eberswalde Hbf", "Flughafen BER - Terminal 5 (Schönefeld)"),
-            Information("RB 24 Süd", "Flughafen BER - Terminal 1-2", "Wünsdorf-Waldstadt"),
-            Information("RB 24", "Zinnowitz", "Peenemünde"),
-            Information("RB 25", "Barth", "Velgast"),
-            Information("RB 31", "Elsterwerda-Biehla", "Dresden Hbf"),
-            Information("RB 32 Süd", "Elsterwerda-Biehla", "Dresden Hbf"),
-            Information("RB 32 Nord", "Oranienburg", "Flughafen BER - Terminal 5 (Schönefeld)"),
-            Information("RB 43", "Falkenberg(Elster)", "Frankfurt(Oder)"),
-            Information("RB 49", "Cottbus Hbf", "Falkenberg(Elster)"),
-            Information("RB 55", "Kremmen", "Henningsdorf(Berlin)"),
-            Information("RB 66", "Angermünde", "Tantow"),
-            Information("RE 66", "Berlin Gesundbrunnen", "Tantow"),
-            Information("RB 92", "Cottbus Hbf", "Guben"),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "DB Regio AG Nordost"
-}
-
-class DBRegioMitte : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "RE", "RB")) return false
-
-        val valid = setOf(
-            Information("RE 1", "Koblenz Hbf", "Mannheim Hbf"),
-            Information("RE 2", "Koblenz Hbf", "Frankfurt(Main)Hbf"),
-            Information("RE 4", "Karlsruhe Hbf", "Frankfurt(Main)Hbf"),
-            Information("RE 6", "Karlsruhe Hbf", "Kaiserslautern Hbf"),
-            Information("RE 9", "Karlsruhe Hbf", "Mannheim Hbf"),
-            Information("RE 14", "Frankfurt(Main)Hbf", "Mannheim Hbf"),
-            Information("RE 20", "Frankfurt(Main)Hbf", "Limburg(Lahn)"),
-            Information("RB 22", "Frankfurt(Main)Hbf", "Limburg(Lahn)"),
-            Information("RB 23", "Mayen Ost", "Limburg(Lahn)"),
-            Information("RE 25", "Gießen", "Koblenz Hbf"),
-            Information("RE 30", "Kassel Hbf", "Frankfurt(Main)Hbf"),
-            Information("RE 34", "Glauburg-Stockheim", "Frankfurt(Main)Hbf"),
-            Information("RB 35", "Bingen(Rhein) Stadt", "Worms Hbf"),
-            Information("RB 38", "Andernach", "Kaisersesch"),
-            Information("RB 40", "Dillenburg", "Frankfurt(Main)Hbf"),
-            Information("RE 40", "Mannheim Hbf", "Freudenstadt"),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "DB Regio Mitte"
-}
-
-class DBFernverkehrAG : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        // TODO: How do we correctly determine which IC services are operated by DB Fernverkehr?
-        //       Hard-coding a set of train numbers seems incredibly dumb and becomes out of date immediately.
-        //       Also note that some German IC services may use the "RE" prefix, too.
-        //       If during the check-in you have the choice of either taking the "IC" or "RE", obviously use IC.
-        //       This is immensely stupid, go thank Deutsche Bahn and federal states for this mess.
-        return Operator.matchesTypes(name, "ICE", "IC")
-        // TODO: THIS ASSIGNS DB FERNVERKEHR FOR EVERY IC SERVICE, WHICH IS WRONG.
-    }
-
-    override fun name() = "DB Fernverkehr AG"
-}
-
-class NBE : Operator {
-    override fun matches(name: String, origin: String, destination: String) = name.startsWith("NBE")
-
-    override fun name() = "Nordbahn Eisenbahngesellschaft"
-}
-
-class DWE : Operator {
-    override fun matches(name: String, origin: String, destination: String) = name.length == 8 && name.startsWith("DWE")
-
-    override fun name() = "Dessau-Wörlitzer Eisenbahn"
-}
-
-class FlixTrain : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "FLX")
-
-    override fun name() = "FlixTrain"
-}
-
-class Erixx : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "erx")
-
-    override fun name() = "erixx"
-}
-
-class Metronom : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "ME")
-
-    override fun name() = "metronom"
-}
-
-class KD : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "KD")
-
-    override fun name() = "Koleje Dolnośląskie"
-}
-
-class ODEG : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "RE", "RB")) return false
-
-        val valid = setOf(
-            Information("RE 1", "Magdeburg Hbf", null),
-            Information("RE 1", "Frankfurt(Oder)", null),
-            Information("RE 2", "Berlin-Charlottenburg", "Wismar"),
-            Information("RB 33", "Jüterbog", "Potsdam Hbf"),
-            Information("RB 64", "Görlitz", "Hoyerswerda"),
-            Information("RE 8", "Wismar", null),
-            Information("RB 65", "Cottbus Hbf", "Zittau")
-
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "Ostdeutsche Eisenbahn GmbH"
-}
-
-class EB : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "RE", "RB")) return false
-
-        val valid = setOf(
-            Information("RE 12", "Leipzig Hbf", null),
-            Information("RE 50", "Erfurt Hbf", null),
-            Information("RB 22", "Leipzig Hbf", null),
-            Information("RB 23", "Erfurt Hbf", null),
-            Information("RB 13", "Leipzig Hbf", null),
-            Information("RB 13", "Gera Hbf", null),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "Erfurter Bahn"
-}
-
-class SWEG : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        // TODO !!!!!!!!!!
-        return name.startsWith("MEX")
-    }
-
-    override fun name() = "SWEG Bahn Stuttgart GmbH"
-}
-
-class BRB : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "BRB")
-
-    override fun name() = "Bayrische Regiobahn"
-}
-
-class MRB : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "RE", "RB")) return false
-
-        val valid = setOf(
-            Information("RB 30", "Dresden Hbf", "Zwickau(Sachs)Hbf"),
-            Information("RB 45", "Chemnitz Hbf", "Elsterwerda"),
-            Information("RB 110", "Leipzig Hbf", "Döbeln"),
-            Information("RE 3", "Dresden Hbf", "Hof Hbf"),
-            Information("RE 6", "Leipzig Hbf", "Chemnitz Hbf"),
-        )
-
-        val info = Information(name, origin, destination)
-        return Operator.matchesAny(info, valid)
-    }
-
-    override fun name() = "Mitteldeutsche Regiobahn"
-}
-
-// I only wanted to focus on German rail companies, but I have some TGVs in my logs.
-class SNCF : Operator {
-    // There's surely more to consider here. (TER?)
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "TGV")
-
-    override fun name() = "SNCF"
-}
-
-class OEBB : Operator {
-    // There's surely more to consider here. (CityJets? RegionalEXpress?)
-    override fun matches(name: String, origin: String, destination: String) =
-        Operator.matchesTypes(name, "RJ", "RJX", "NJ")
-
-    override fun name() = "ÖBB"
-}
-
-class GVB : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Amsterdam") || !destination.contains("Amsterdam")) return false
-
-        // NOTE: Trams, buses and ferries are not considered here.
-        //       These are not contained in the API Träwelling uses, and thus don't show up in exports.
-        return Operator.matchesTypes(name, "U")
-    }
-
-    override fun name() = "Gemeente Vervoerbedrijf Amsterdam"
-}
-
-class BVG : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Berlin") || !destination.contains("Berlin")) return false
-
-        return Operator.matchesTypes(name, "STR", "U", "Bus")
-    }
-
-    override fun name() = "Berliner Verkehrsbetriebe"
-}
-
-class BSAG : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Bremen") || !destination.contains("Bremen")) return false
-
-        if (!Operator.matchesTypes(name, "STR", "Bus")) return false
-
-        // Bus 1
-        val parts = name.split(" ") // [Bus, 1]
-        if (parts.size != 2) return false
-        val line = parts.last() // [1]
-        if (!line.all { Character.isDigit(it) }) return false
-        val lineNumber = line.toInt()
-
-        return lineNumber <= 100
-    }
-
-    override fun name() = "Bremer Straßenbahn AG"
-}
-
-
-class LVB : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "STR", "Bus")) return false
-
-        fun anyContains(s: String) = origin.contains(s) || destination.contains(s)
-        if (anyContains("Leipzig")) return true
-        if (anyContains("Schkeuditz")) return true
-
-        return false
-    }
-
-    override fun name() = "Leipziger Verkehrsbetriebe"
-}
-
-class WFB : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "WFB")
-
-    override fun name() = "Westfalenbahn"
-}
-
-class NWB : Operator {
-    override fun matches(name: String, origin: String, destination: String) = Operator.matchesTypes(name, "NWB")
-
-    override fun name() = "Nordwestbahn"
-}
-
-class DVB : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (Operator.matchesTypes(name, "BusEV")) return true
-        if (!Operator.matchesTypes(name, "STR", "Bus")) return false
-
-        fun anyContains(s: String) = origin.contains(s) || destination.contains(s)
-
-        if (Operator.matchesTypes(name, "STR")) {
-            if (anyContains("Radebeul")) return true
-            if (anyContains("Dresden")) return true
-        }
-
-        if (!anyContains("Dresden")) return false
-
-        val line = name.split(' ').last().toIntOrNull()
-        return (line ?: 100) < 100
-    }
-
-    override fun name() = "Dresdner Verkehrsbetriebe"
-}
-
-class VGH : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-
-        fun anyContains(s: String) = origin.contains(s) || destination.contains(s)
-
-        if (!Operator.matchesTypes(name, "Bus")) return false
-
-        if (!anyContains("Hoyerswerda")) return false
-
-        // Bus 1
-        val parts = name.split(" ") // [Bus, 1]
-        if (parts.size != 2) return false
-        val line = parts.last() // [1]
-        if (!line.all { Character.isDigit(it) }) return false
-        val lineNumber = line.toInt()
-
-        return lineNumber <= 5
-    }
-
-    override fun name() = "Verkehrsgesellschaft Hoyerswerda mbH"
-}
-
-class SBahnBerlin : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "S")) return false
-        if (origin.contains("Berlin") || destination.contains("Berlin")) return true
-        if (origin.contains("Bernau") || destination.contains("Bernau")) return true
-        if (origin.contains("Potsdam") || destination.contains("Potsdam")) return true
-
-        return false
-    }
-
-    override fun name() = "S-Bahn Berlin"
-}
-
-class SBahnHamburg : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "S")) return false
-        if (origin.contains("Hamburg") || destination.contains("Hamburg")) return true
-        if (origin.contains("Stade") || destination.contains("Stade")) return true
-
-        return false
-    }
-
-    override fun name() = "S-Bahn Hamburg"
-}
-
-class SBahnMuenchen : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "S")) return false
-        if (origin.contains("München") || destination.contains("München")) return true
-        if (origin.contains("Tutzing") || destination.contains("Tutzing")) return true
-
-        return false
-    }
-
-    override fun name() = "S-Bahn München"
-}
-
-class SBahnStuttgart : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!Operator.matchesTypes(name, "S")) return false
-
-        return origin.contains("Stuttgart") || destination.contains("Stuttgart")
-    }
-
-    override fun name() = "S-Bahn Stuttgart"
-}
-
-class RVSOE : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        // TODO: RVSOE buses don't just start/end in Dresden.
-        val scuffed = origin + destination
-        if (!scuffed.contains("Dresden")) return false
-
-        if (!Operator.matchesTypes(name, "Bus")) return false
-        val line = name.split(' ').last().toIntOrNull()
-        // RVSOE buses usually have numbers >100 and are not operated by DVB, except for the line 166, interestingly enough...
-        return (line ?: 0) >= 100
-    }
-
-    override fun name() = "Regionalverkehr Sächsische Schweiz-Osterzgebirge GmbH"
-}
-
-class HAVAG : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Halle") && !destination.contains("Halle")) return false
-
-        if (!Operator.matchesTypes(name, "STR", "Bus")) return false
-        val parts = name.split(' ')
-        val last = parts.last()
-        if (last == "E") return true
-        require(last.chars().allMatch { Character.isDigit(it) })
-        val line = last.toInt()
-        // OBS buses usually have numbers >300 and are not operated by HAVAG
-        return line < 300
-    }
-
-    override fun name() = "Hallesche Verkehrs-AG"
-}
-
-class ViP : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Potsdam") && !destination.contains("Potsdam")) return false
-
-        return Operator.matchesTypes(name, "STR", "Bus")
-    }
-
-    override fun name() = "ViP Verkehrsbetrieb Potsdam GmbH"
-}
-
-class DVV : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Dessau") && !destination.contains("Dessau")) return false
-
-        return Operator.matchesTypes(name, "STR", "Bus")
-    }
-
-    override fun name() = "Dessauer Verkehrs-GmbH"
-}
-
-class VVS : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        val scuffed = origin + destination
-        if (!scuffed.contains("Stuttgart")) return false
-
-        // STB, not STR... thanks.
-        return Operator.matchesTypes(name, "STB", "Bus")
-    }
-
-    override fun name() = "Verkehrs- und Tarifverbund Stuttgart GmbH"
-}
-
-class VBBR : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Brandenburg an der Havel") && !destination.contains("Brandenburg an der Havel")) return false
-
-        return Operator.matchesTypes(name, "STR", "Bus")
-    }
-
-    override fun name() = "Verkehrsbetriebe Brandenburg an der Havel GmbH"
-}
-
-class NaumburgerStrassenbahn : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Naumburg") && !destination.contains("Naumburg")) return false
-
-        return Operator.matchesTypes(name, "STR")
-    }
-
-    override fun name() = "Naumburger Straßenbahn GmbH"
-}
-
-class GVBGera : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Gera") && !destination.contains("Gera")) return false
-
-        return Operator.matchesTypes(name, "STR", "Bus")
-    }
-
-    override fun name() = "Verkehrs- und Betriebsgesellschaft Gera"
-}
-
-class WVV : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Würzburg") && !destination.contains("Würzburg")) return false
-
-        return Operator.matchesTypes(name, "STR", "Bus")
-    }
-
-    override fun name() = "Würzburger Versorgungs- und Verkehrs-GmbH"
-}
-
-class EVAG : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        if (!origin.contains("Erfurt") && !destination.contains("Erfurt")) return false
-
-        return Operator.matchesTypes(name, "STR", "Bus")
-    }
-
-    override fun name() = "Erfurter Verkehrsbetriebe"
-}
-
-class CD : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        // TODO lol
-        //      Not just naive, but also plain incorrect. But Prague ECs - at least the ones I've seen, - use CD rolling stock. Perhaps not entirely dumb.
-        return name.startsWith("EC") && (origin == "Praha hl.n." || destination == "Praha hl.n.")
-    }
-
-    override fun name() = "České dráhy"
-}
-
-class OBS : Operator {
-    override fun matches(name: String, origin: String, destination: String): Boolean {
-        // TODO: OBS buses don't have to start/end in Halle. I think.
-        if (!origin.contains("Halle") || !destination.contains("Halle")) return false
-
-        if (!Operator.matchesTypes(name, "Bus")) return false
-        val line = name.split(' ').last().toIntOrNull()
-        // OBS buses usually have numbers >300 and are not operated by HAVAG
-        return (line ?: 0) >= 300
-    }
-
-    override fun name() = "Omnibusbetrieb Saalekreis"
-}
-
-val operators = setOf(
-    ABRM(),
-    ALX(),
-    BRB(),
-    BSAG(),
-    BVG(),
-    CD(),
-    DBFernverkehrAG(),
-    DBRegioAGNRW(),
-    DBRegioAGNord(),
-    DBRegioAGNordost(),
-    DBRegioAGSuedost(),
-    DBRegioMitte(),
-    DVB(),
-    DVV(),
-    DWE(),
-    EB(),
-    EVAG(),
-    Erixx(),
-    FlixTrain(),
-    GVB(),
-    GVBGera(),
-    HAVAG(),
-    KD(),
-    LVB(),
-    MRB(),
-    Metronom(),
-    NBE(),
-    NWB(),
-    NaumburgerStrassenbahn(),
-    OBS(),
-    ODEG(),
-    OEBB(),
-    OPX(),
-    RVSOE(),
-    SBahnBerlin(),
-    SBahnHamburg(),
-    SBahnMuenchen(),
-    SBahnStuttgart(),
-    SNCF(),
-    SWEG(),
-    TLX(),
-    VBBR(),
-    VGH(),
-    VVS(),
-    ViP(),
-    WFB(),
-    WVV(),
-)
-
-fun getOperator(name: String, origin: String, destination: String): String? {
-    var result: String? = null
-
-    for (it in operators) {
-        if (it.matches(name, origin, destination)) {
-            result = it.name()
-            break
-        }
-    }
-
-    return result
-}
-
-private fun printEvents(term: Terminal, data: TraewellingJson) {
-    term.println(bold(underline("Events")))
-
-    val events = mutableMapOf<String, Int>()
-    data.entries.map { it.status.event?.name ?: "[No event]" }.forEach { events.incrementValue(it) }
-
-    val totalEventCount = events.map { it.value }.sum()
-    term.println(table {
-        borderType = BorderType.ROUNDED
-        header {
-            style = TextStyle(bold = true)
-            cellBorders = Borders.NONE
-
-            row("Event", "Count", "%")
-        }
-        body {
-            cellBorders = Borders.NONE
-            padding = Padding.of(right = 3)
-
-            events.toDescendingSortedList().forEach { (event, count) ->
-                row(event, count, percentageString(count, totalEventCount))
-            }
-        }
-    })
-}
-
-private fun printModes(term: Terminal, data: TraewellingJson) {
-    fun toFancyModeString(mode: String) = when (mode) {
-        "bus" -> "Bus"
-        "tram" -> "Tram"
-        "suburban" -> "S-Bahn"
-        "subway" -> "U-Bahn"
-        "regional" -> "Regional (RB, RE, ...)"
-        "regionalExp" -> "Fernverkehr (FLX)" // ???????
-        "national" -> "Fernverkehr (IC, EC, ...)"
-        "nationalExpress" -> "Fernverkehr (ICE, ...)"
-        else -> mode.replaceFirstChar { it.uppercaseChar() }
-    }
-
-    (if (TOP_LIMIT == Int.MAX_VALUE) "all time" else "top $TOP_LIMIT").let { title ->
-        term.println(bold(underline("Modes ($title)")))
-    }
-
-    val modes = mutableMapOf<String, Int>()
-    data.entries.map { toFancyModeString(it.status.train.category) }.forEach { modes.incrementValue(it) }
-
-    val totalModesCount = modes.map { it.value }.sum()
-    term.println(table {
-        borderType = BorderType.ROUNDED
-        header {
-            style = TextStyle(bold = true)
-            cellBorders = Borders.NONE
-
-            row("Mode", "Count", "%")
-        }
-        body {
-            cellBorders = Borders.NONE
-            padding = Padding.of(right = 3)
-
-            modes.toDescendingSortedList().take(TOP_LIMIT).forEach { (mode, count) ->
-                row(mode, count, percentageString(count, totalModesCount))
-            }
-        }
-        if (modes.size > TOP_LIMIT) {
-            footer {
-                cellBorders = Borders.NONE
-                row("... and ${modes.size - TOP_LIMIT} more")
-            }
-        }
-    })
-}
-
-private fun printLines(term: Terminal, data: TraewellingJson) {
-    data class LineInfo(val line: String, val origin: String, val destination: String)
-
-    (if (TOP_LIMIT == Int.MAX_VALUE) "all time" else "top $TOP_LIMIT").let { title ->
-        term.println(bold(underline("Lines ($title)")))
-    }
-
-    // val lines = mutableMapOf<LineInfo, Int>()
-    val lines = mutableMapOf<String, Int>()
-    data.entries.map { it.trip.lineName }.forEach { lines.incrementValue(it) }/*
-data.entries.map { it.trip }.map {
-LineInfo(
-    line = it.lineName.truncate(MAX_STRING_LENGTH),
-    origin = it.origin.name.truncate(MAX_STRING_LENGTH),
-    destination = it.destination.name.truncate(MAX_STRING_LENGTH),
-)
-}.forEach { lines.incrementValue(it) }
-     */
-
-    val totalLineCount = lines.map { it.value }.sum()
-    term.println(table {
-        tableBorders = Borders.NONE
-        borderType = BorderType.BLANK
-
-        header {
-            style = TextStyle(bold = true)
-            cellBorders = Borders.NONE
-
-            //row("Line", "Destination", "Count", "%")
-            row("Line", "Count", "%")
-        }
-        body {
-            cellBorders = Borders.NONE
-            padding = Padding.of(right = 3)
-
-            lines.toDescendingSortedList().take(TOP_LIMIT).forEach { (line, count) ->
-                //row(lineInfo.line, lineInfo.destination, count, percentageString(count, totalLineCount))
-                row(line, count, percentageString(count, totalLineCount))
-            }
-        }
-        if (lines.size > TOP_LIMIT) {
-            footer {
-                cellBorders = Borders.NONE
-                row("... and ${lines.size - TOP_LIMIT} more")
-            }
-        }
-    })
-}
-
-fun printOperators(term: Terminal, data: TraewellingJson) {
-    val operators = mutableMapOf<String, Int>()
-    data.entries.map { it.trip }.forEach {
-        val operator = getOperator(it.lineName, it.origin.name, it.destination.name)
-        operators.incrementValue(operator ?: "<unknown operator>")
-    }
-
-    val totalLineCount = operators.map { it.value }.sum()
-    term.println(table {
-        tableBorders = Borders.NONE
-        borderType = BorderType.BLANK
-
-        header {
-            style = TextStyle(bold = true)
-            cellBorders = Borders.NONE
-
-            row("Operator", "Count", "%")
-        }
-        body {
-            cellBorders = Borders.NONE
-            padding = Padding.of(right = 3)
-
-            operators.toDescendingSortedList().take(TOP_LIMIT).forEach { (operator, count) ->
-                row(operator, count, percentageString(count, totalLineCount))
-            }
-        }
-        if (operators.size > TOP_LIMIT) {
-            footer {
-                cellBorders = Borders.NONE
-                row("... and ${operators.size - TOP_LIMIT} more")
-            }
-        }
-    })
-}
 
 @Serializable
 data class JsonDefinedLine(val line: String, val from: String?, val to: String?)
@@ -1052,12 +154,11 @@ fun getOperatorJsonDefined(
     return null
 }
 
-@OptIn(ExperimentalSerializationApi::class)
-fun loadTraewellingData(files: List<String>): TraewellingJson? {
-    if (files.isEmpty()) return null
+fun loadTraewellingData(paths: Set<Path>): TraewellingJson? {
+    if (paths.isEmpty()) return null
 
-    val paths = files.map(::Path).filter { it.exists() }
-    if (paths.size != files.size) eprintln("warning: ${files.size - paths.size} file(s) do not exist")
+    // caller ensures all provided paths resolve to existing files
+
     var oldestMeta: Meta? = null
     var newestMeta: Meta? = null
     val entries = mutableSetOf<DataEntry>()
@@ -1081,9 +182,9 @@ fun loadTraewellingData(files: List<String>): TraewellingJson? {
         if (oldestMeta == null) oldestMeta = meta
         if (newestMeta == null) newestMeta = meta
 
-        val from = toUnixTime(meta.exportedAt)
-        if (from > toUnixTime(newestMeta.exportedAt)) newestMeta = meta
-        if (from < toUnixTime(oldestMeta.exportedAt)) oldestMeta = meta
+        val from = toUnixTime(meta.from)
+        if (from > toUnixTime(newestMeta.from)) newestMeta = meta
+        if (from < toUnixTime(oldestMeta.from)) oldestMeta = meta
 
         data.entries.forEach { entries += it }
     }
@@ -1098,66 +199,500 @@ fun loadTraewellingData(files: List<String>): TraewellingJson? {
     )
 }
 
-fun main(args: Array<String>) {
-    val term = Terminal(tabWidth = 4, width = Int.MAX_VALUE, interactive = false, ansiLevel = AnsiLevel.TRUECOLOR)
-    val data = loadTraewellingData(args.asList()) ?: exitError(1, "error: no input file")
+abstract class StatisticStep(internal val term: Terminal) {
+    abstract fun exec(data: TraewellingJson)
+}
 
-    with(data.meta) {
-        term.println("\n${from.dropLast(6).replace('T', ' ')} - ${to.dropLast(6).replace('T', ' ')}\n")
-        term.println("${bold("Distance travelled: ")}${user.trainDistance / 1000} km")
-        term.println("${bold("Duration: ")}${user.trainDuration / 60} h")
-        term.println("${bold("Average speed: ")}${(user.trainSpeed / 1000).roundToInt()} km/h")
-        term.println("${bold("Points: ")}${user.points} (total: ${data.entries.sumOf { it.status.train.points }})")
-    }
-
-    //printEvents(term, data)
-    //printModes(term, data)
-    //printLines(term, data)
-    printOperators(term, data)
-
-    data.entries.forEach { travel ->
-        return@forEach
-        val status = travel.status
-        val train = status.train
-        val distanceString = String.format("%.02f", train.distance / 1000.0)
-        val departureDateTime = toZonedDateTime(train.origin.departure)
-        val arrivalDateTime = toZonedDateTime(train.destination.arrival)
-        val delayAtOrigin = delay(train.origin)
-        val delayAtDestination = delay(train.destination)
-        val duration = train.duration
-        val speed = train.speed.roundToInt()
-
-        val formatter = DateTimeFormatter.ofPattern("EEEE, dd. LLLL yyyy HH:mm", Locale.GERMANY)
-        val formattedDepartureTime = departureDateTime.format(formatter)
-        val formattedArrivalTime = arrivalDateTime.format(formatter)
-
-        term.println("${train.lineName} ${gray("${train.origin.name} -> ${train.destination.name}")}")
-
-        status.event?.let { term.println("\tEvent: ${it.name}") }
-
-        if (status.body.isNotEmpty()) term.println("\tNote: \"${status.body}\"")
-
-        term.println(
-            "\t${formattedDepartureTime} (${delayAtOrigin.first(delayAtOrigin.second)}) -> $formattedArrivalTime (${
-                delayAtDestination.first(
-                    delayAtDestination.second
-                )
-            })"
-        )
-        term.println("\t${distanceString} km, $duration min ($speed km/h)")
-    }
-    data.entries.filter { it.trip.category.lowercase() == "bus" }.forEach {
-        println("${it.trip.lineName} ${it.trip.origin} ${it.trip.destination}")
-    }
-
-    val seen = mutableSetOf<String>()
-    data.entries.sortedBy { it.trip.lineName }.forEach { it ->
-        val evu = getOperator(it.trip.lineName, it.trip.origin.name, it.trip.destination.name) ?: ""
-        val s = "${it.trip.lineName} ${gray("from ${it.trip.origin.name}")} to ${gray(it.trip.destination.name)} $evu"
-        if (s !in seen) {
-            term.println(s)
-            //term.println("$s ${black("${it.trip.stopovers.joinToString { stop -> stop.name }}}")}")
-            seen += s
+class PrintMetadata(term: Terminal) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        with(data.meta) {
+            term.println("\n${from.dropLast(6).replace('T', ' ')} - ${to.dropLast(6).replace('T', ' ')}\n")
+            term.println("${bold("Distance travelled: ")}${user.trainDistance / 1000} km")
+            term.println("${bold("Duration: ")}${user.trainDuration / 60} h")
+            term.println("${bold("Points: ")}${user.points} (total: ${data.entries.sumOf { it.status.train.points }})")
         }
+    }
+}
+
+class PrintCheckIns(term: Terminal) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        data.entries.forEach { travel ->
+            val status = travel.status
+            val train = status.train
+            val distanceString = String.format("%.02f", train.distance / 1000.0)
+            val departureDateTime = toZonedDateTime(train.origin.departure)
+            val arrivalDateTime = toZonedDateTime(train.destination.arrival)
+            val delayAtOrigin = delay(train.origin)
+            val delayAtDestination = delay(train.destination)
+            val duration = train.duration
+            val speed = ((train.distance / 1000.0) / (duration / 60.0)).roundToInt()
+
+            val formatter = DateTimeFormatter.ofPattern("EEEE, dd. LLLL yyyy HH:mm", Locale.GERMANY)
+            val formattedDepartureTime = departureDateTime.format(formatter)
+            val formattedArrivalTime = arrivalDateTime.format(formatter)
+
+            term.println("${train.lineName} ${gray("${train.origin.name} -> ${train.destination.name}")}")
+
+            status.event?.let { term.println("\tEvent: ${it.name}") }
+
+            if (status.body.isNotEmpty()) term.println("\tNote: \"${status.body}\"")
+
+            term.println(
+                "\t${formattedDepartureTime} (${delayAtOrigin.first(delayAtOrigin.second)}) -> $formattedArrivalTime (${
+                    delayAtDestination.first(
+                        delayAtDestination.second
+                    )
+                })"
+            )
+            term.println("\t${distanceString} km, $duration min ($speed km/h)")
+        }
+    }
+}
+
+class PrintEvents(term: Terminal) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        term.println(bold(underline("Events")))
+
+        val events = mutableMapOf<String, Int>()
+        data.entries.map { it.status.event?.name ?: "[No event]" }.forEach { events.incrementValue(it) }
+
+        val totalEventCount = events.map { it.value }.sum()
+        term.println(table {
+            borderType = BorderType.ROUNDED
+            header {
+                style = TextStyle(bold = true)
+                cellBorders = Borders.NONE
+
+                row("Event", "Count", "%")
+            }
+            body {
+                cellBorders = Borders.NONE
+
+                events.toDescendingSortedList().forEach { (event, count) ->
+                    row(event, count, percentageString(count, totalEventCount))
+                }
+            }
+        })
+    }
+}
+
+class PrintModes(term: Terminal, private val atMost: Int) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        fun toFancyModeString(mode: String) = when (mode) {
+            "bus" -> "Bus"
+            "tram" -> "Tram"
+            "suburban" -> "S-Bahn"
+            "subway" -> "U-Bahn"
+            "regional" -> "Regional (RB, RE, ...)"
+            "regionalExp" -> "Fernverkehr (andere)" // ???????
+            "national" -> "Fernverkehr (IC, EC, ...)"
+            "nationalExpress" -> "Fernverkehr (ICE, ...)"
+            "ferry" -> "Fähre"
+            else -> mode.replaceFirstChar { it.uppercaseChar() }
+        }
+
+        (if (atMost == Int.MAX_VALUE) "all time" else "top $atMost").let { title ->
+            term.println(bold(underline("Modes ($title)")))
+        }
+
+        val modes = mutableMapOf<String, Int>()
+        data.entries.map { toFancyModeString(it.status.train.category) }.forEach { modes.incrementValue(it) }
+
+        val totalModesCount = modes.map { it.value }.sum()
+        term.println(table {
+            borderType = BorderType.ROUNDED
+            header {
+                style = TextStyle(bold = true)
+                cellBorders = Borders.NONE
+
+                row("Mode", "Count", "%")
+            }
+            body {
+                cellBorders = Borders.NONE
+
+                modes.toDescendingSortedList().take(atMost).forEach { (mode, count) ->
+                    row(mode, count, percentageString(count, totalModesCount))
+                }
+            }
+            if (modes.size > atMost) {
+                footer {
+                    cellBorders = Borders.NONE
+                    row("... and ${modes.size - atMost} more")
+                }
+            }
+        })
+    }
+}
+
+class PrintLines(term: Terminal, private val atMost: Int) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        (if (atMost == Int.MAX_VALUE) "all time" else "top $atMost").let { title ->
+            term.println(bold(underline("Lines ($title)")))
+        }
+
+        val lines = mutableMapOf<String, Int>()
+        data.entries.map { it.trip.lineName }.forEach { lines.incrementValue(it) }
+
+        val totalLineCount = lines.map { it.value }.sum()
+        term.println(table {
+            tableBorders = Borders.NONE
+            borderType = BorderType.BLANK
+
+            header {
+                style = TextStyle(bold = true)
+                cellBorders = Borders.NONE
+
+                row("Line", "Count", "%")
+            }
+            body {
+                cellBorders = Borders.NONE
+
+                lines.toDescendingSortedList().take(atMost).forEach { (line, count) ->
+                    row(line, count, percentageString(count, totalLineCount))
+                }
+            }
+            if (lines.size > atMost) {
+                footer {
+                    cellBorders = Borders.NONE
+                    row("... and ${lines.size - atMost} more")
+                }
+            }
+        })
+    }
+}
+
+class PrintOperators(term: Terminal, private val atMost: Int) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        val json = Json { ignoreUnknownKeys = true }
+        val jsonDefinedOperators =
+            json.decodeFromStream<List<JsonDefinedOperator>>(Path.of("operators.json").inputStream())
+        val operators = mutableMapOf<String, Int>()
+
+        data.entries.forEach {
+            val traewellingName = it.status.train.operator?.name
+            val originStation = it.trip.origin.name
+            val destinationStation = it.trip.destination.name
+
+            // Give priority to whatever operator is provided by Träwelling.
+            // They commonly return null for local transport operators, in which case we will try to fall back to our
+            // own matching logic and see if we can guess the correct operator. If that still doesn't work, too bad.
+            val operator = when {
+                traewellingName != null -> traewellingName
+                else -> getOperatorJsonDefined(
+                    jsonDefinedOperators, it.trip.lineName, originStation, destinationStation
+                ) ?: ""
+            }
+            operators.incrementValue(operator)
+        }
+
+        val totalOperatorCount = operators.map { it.value }.sum()
+        term.println(table {
+            tableBorders = Borders.NONE
+            borderType = BorderType.BLANK
+
+            header {
+                style = TextStyle(bold = true)
+                cellBorders = Borders.NONE
+
+                row("Operator", "Count", "%")
+            }
+            body {
+                cellBorders = Borders.NONE
+
+                operators.toDescendingSortedList().take(atMost).forEach { (operator, count) ->
+                    row(operator, count, percentageString(count, totalOperatorCount))
+                }
+            }
+            if (operators.size > atMost) {
+                footer {
+                    cellBorders = Borders.NONE
+                    row("... and ${operators.size - atMost} more")
+                }
+            }
+        })
+    }
+}
+
+class PrintModeStats(term: Terminal) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        data class ModeStats(val checkins: Int, val duration: Long, val distance: Long)
+
+        fun getModeStats(filter: (String) -> Boolean): ModeStats {
+            val filtered = data.entries.map { it.status.train }.filter { filter(it.lineName) }
+
+            return ModeStats(checkins = filtered.count(),
+                duration = filtered.sumOf { it.duration } / 60,
+                distance = filtered.sumOf { it.distance } / 1000)
+        }
+
+        fun printModeStats(name: String, filter: (String) -> Boolean) = getModeStats(filter).let {
+            term.println(
+                "${red(name)}: ${bold(it.checkins.toString())} check-ins, ${bold(it.distance.toString())} km, ${
+                    bold(
+                        it.duration.toString()
+                    )
+                } hours, ${bold((it.distance / it.duration).toString())} km/h"
+            )
+        }
+
+        printModeStats("Fernverkehr") {
+            it.split(' ').firstOrNull() in LONG_DISTANCE_PREFIXES
+        }
+        printModeStats("Regional   ") {
+            if (it.contains(' '))
+                if (it.split(' ').firstOrNull() in REGIONAL_PREFIXES) return@printModeStats true
+            else
+                REGIONAL_PREFIXES.forEach { prefix ->
+                    if (it.startsWith(prefix))
+                        return@printModeStats true
+                }
+            false
+        }
+        printModeStats("S-Bahn     ") { it.startsWith("S") && !it.startsWith("ST") }
+        printModeStats("U-Bahn     ") { it.startsWith("U") }
+        printModeStats("Tram       ") { it.startsWith("ST") }
+        printModeStats("Bus        ") { it.startsWith("Bus") }
+    }
+}
+
+class PrintSeenStations(term: Terminal) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        val seenStations = mutableMapOf<String, Int>()
+        data.entries.map { it.status.train }.forEach {
+            seenStations.incrementValue(it.origin.name)
+            seenStations.incrementValue(it.destination.name)
+        }
+        seenStations.toDescendingSortedList().forEach { (station, count) ->
+            println("$count $station")
+        }
+    }
+}
+
+class PrintAllLines(term: Terminal, private val operatorJsonPath: Path) : StatisticStep(term) {
+    override fun exec(data: TraewellingJson) {
+        val json = Json { ignoreUnknownKeys = true }
+        val jsonDefinedOperators = json.decodeFromStream<List<JsonDefinedOperator>>(operatorJsonPath.inputStream())
+        val seen = mutableSetOf<String>()
+        data.entries.sortedBy { it.trip.lineName }.forEach {
+            val traewellingName = it.status.train.operator?.name
+            val originStation = it.trip.origin.name
+            val destinationStation = it.trip.destination.name
+
+            // Prioritize whatever operator provided by Träwelling.
+            // They commonly return null for local transport operators, in which case we will try to fall back to our
+            // own matching logic and see if we can guess the correct operator. If that still doesn't work, too bad.
+            val evu = when {
+                traewellingName != null -> traewellingName
+                else -> getOperatorJsonDefined(
+                    jsonDefinedOperators, it.trip.lineName, originStation, destinationStation
+                ) ?: "<unknown>"
+            }
+
+            val s = "${it.trip.lineName} ${gray("from $originStation to $destinationStation")} $evu"
+            if (s !in seen) {
+                term.println(s)
+                seen += s
+            }
+        }
+    }
+}
+
+data class ParsedArguments(
+    var paths: Set<Path>,
+    var topLimit: Int,
+    var ansiLevel: AnsiLevel,
+    var useMetadataStep: Boolean,
+    var useEventsStep: Boolean,
+    var useModesStep: Boolean,
+    var useLinesStep: Boolean,
+    var useOperatorsStep: Boolean,
+    var useModeStatsStep: Boolean,
+    var useSeenStationsStep: Boolean,
+    var useAllLinesStep: Boolean,
+    var useAllCheckinsStep: Boolean,
+)
+
+fun printHelp() {
+    val help = """
+        Usage: travelstats [options] [files...]
+        
+        Input files are JSON-formatted exports from Träwelling. At least one is required,
+        but merging multiple files into one dataset is supported. Make sure their date
+        ranges do not overlap.
+        Get yours here: https://traewelling.de/export
+
+        Enable options by passing them as separate arguments. Options can only be toggled
+        on; the argument parser is extremely bare-bones, key-value syntax is not implemented.
+        By default, all options are off. Everything that is not identified as a supported
+        option will be treated as an input file.
+        Refer to the list below to find ones you might be interested in.
+
+        Options:
+            --top-limit [int]: how many rows of values to show. 
+                               Only affects "modes", "lines" and "operators".
+                               Default: MAX_INT (${Int.MAX_VALUE})
+
+            --ansi-level [string]: the level of color support to use.
+                                   Valid options: ansi16, ansi256, truecolor
+                                   Default: truecolor   
+
+            --metadata: print basic statistics from the `meta` field.
+                        time range, total distance and duration, current and total points.
+
+            --checkins: print all checkins.
+                        line name, origin and destination stations, (optional) event,
+                        (optional) body text, departure and arrival times, delays,
+                        distance in km, duration in minutes, speed in km/h.
+
+            --events: print general event data as a table.
+            
+            --modes: print general mode data as a table.
+
+            --mode-stats: more detailed statistics about general transit modes.
+                          categories: Fernverkehr, Regional, S-Bahn, U-Bahn, Tram, Bus
+                          
+                          Fernverkehr: $LONG_DISTANCE_PREFIXES
+                          Regional: $REGIONAL_PREFIXES
+                          
+                          number of check-ins, total distance (km), total duration (h),
+                          average speed (km/h)
+
+            --lines: print general line data as a table.
+
+            --all-lines: print all unique lines and their respective operators.
+                         Träwelling usually provides operator data in the export,
+                         but often fails at local operators; in which case, this program
+                         *guesses* which one it might be based on rules defined in
+                         the `operators.json` file. The ruleset is far from complete,
+                         but does a decent job of getting closer to 100% coverage.
+
+            --operators: print all operators as a table.
+                         Uses same operator guessing algorithm as described above.
+
+            --seen-stations: prints all the stations you have seen (visited) as a table.
+                             counts both origin and destination stations.
+
+            --help, -h: prints this message and exits with code 0.
+            
+        This program works best on a terminal with truecolor support.
+    """.trimIndent()
+
+    println(help)
+}
+
+fun parseArguments(args: Array<String>): ParsedArguments {
+    val parsedArguments = ParsedArguments(
+        paths = emptySet(),
+        topLimit = Int.MAX_VALUE,
+        ansiLevel = AnsiLevel.TRUECOLOR,
+        useMetadataStep = false,
+        useEventsStep = false,
+        useModesStep = false,
+        useLinesStep = false,
+        useOperatorsStep = false,
+        useModeStatsStep = false,
+        useSeenStationsStep = false,
+        useAllLinesStep = false,
+        useAllCheckinsStep = false,
+    )
+
+    val paths = mutableSetOf<Path>()
+    // Set when we need to read 1 token ahead and prevent the default branch from complaing
+    var skipNext = false
+
+    args.forEachIndexed { index, arg ->
+        when (arg) {
+            "--top-limit" -> {
+                val default = Int.MAX_VALUE
+                skipNext = true
+
+                val limit = args.getOrElse(index + 1) {
+                    eprintln("error: '--top-limit' passed without specifying a limit, expected an integer")
+
+                    skipNext = false
+                    default.toString()
+                }
+
+                parsedArguments.topLimit = limit.toIntOrNull() ?: default
+            }
+
+            "--ansi-level" -> {
+                skipNext = true
+                val level = args.getOrElse(index + 1) {
+                    eprintln("error: '--ansi-level' passed without specifying a level, must be one of 'ansi16', 'ansi256' or 'truecolor'")
+
+                    skipNext = false
+                    "truecolor"
+                }
+
+                parsedArguments.ansiLevel = when (level) {
+                    "ansi16" -> AnsiLevel.ANSI16
+                    "ansi256" -> AnsiLevel.ANSI256
+                    "truecolor" -> AnsiLevel.TRUECOLOR
+                    else -> AnsiLevel.NONE
+                }
+            }
+
+            "--metadata" -> parsedArguments.useMetadataStep = true
+            "--events" -> parsedArguments.useEventsStep = true
+            "--modes" -> parsedArguments.useModesStep = true
+            "--lines" -> parsedArguments.useLinesStep = true
+            "--operators" -> parsedArguments.useOperatorsStep = true
+            "--mode-stats" -> parsedArguments.useModeStatsStep = true
+            "--seen-stations" -> parsedArguments.useSeenStationsStep = true
+            "--all-lines" -> parsedArguments.useAllLinesStep = true
+            "--checkins" -> parsedArguments.useAllCheckinsStep = true
+            "--help", "-h" -> {
+                printHelp()
+                exitProcess(0)
+            }
+
+            else -> {
+                if (skipNext) {
+                    skipNext = false
+                    return@forEachIndexed
+                }
+
+                val path = Path.of(arg)
+                if (path.exists()) {
+                    paths.add(path)
+                } else {
+                    eprintln("error: file does not exist: '$path'")
+                }
+            }
+        }
+    }
+
+    parsedArguments.paths = paths
+    return parsedArguments
+}
+
+fun main(args: Array<String>) {
+    val arguments = parseArguments(args)
+
+    val term = Terminal(tabWidth = 4, width = Int.MAX_VALUE, interactive = false, ansiLevel = arguments.ansiLevel)
+    if (Path.of("operators.json").notExists()) {
+        term.println(brightYellow("warning: 'operators.json' file not found. Make sure it is located next to the launching script/binary. Steps using operator data may shit themselves."))
+        term.println(brightYellow("Continuing anyway."))
+    }
+    val data = loadTraewellingData(arguments.paths) ?: exitError(1, "error: no input")
+
+    val steps = mutableSetOf<StatisticStep>()
+    if (arguments.useMetadataStep) steps.add(PrintMetadata(term))
+    if (arguments.useEventsStep) steps.add(PrintEvents(term))
+    if (arguments.useModesStep) steps.add(PrintModes(term, atMost = arguments.topLimit))
+    if (arguments.useLinesStep) steps.add(PrintLines(term, atMost = arguments.topLimit))
+    if (arguments.useOperatorsStep) steps.add(PrintOperators(term, atMost = arguments.topLimit))
+    if (arguments.useModeStatsStep) steps.add(PrintModeStats(term))
+    if (arguments.useSeenStationsStep) steps.add(PrintSeenStations(term))
+    if (arguments.useAllLinesStep) steps.add(PrintAllLines(term, operatorJsonPath = Path.of("operators.json")))
+    if (arguments.useAllCheckinsStep) steps.add(PrintCheckIns(term))
+
+    if (steps.isEmpty()) {
+        eprintln("error: empty step set. refer to the help page using the `--help` argument and add some!")
+    }
+
+    steps.forEach { step ->
+        step.exec(data)
     }
 }
