@@ -9,6 +9,10 @@ import kotlinx.serialization.Serializable
 //       which could potentially overflow, I simply changed all ints to longs. Feel free to optimize
 //       later, for now I don't care.
 
+// Their exports are a fucking mess. This is hateful.
+// Some newer fields are purposefully commented out to keep compatibility with existing exports.
+// Most of these are useless anyway.
+
 typealias Metres = Long
 typealias Minutes = Long
 
@@ -19,11 +23,12 @@ data class User(
     val username: String,
     val profilePicture: String, // URL
     val trainDistance: Metres,
+    // val totalDistance: Metres?, // What's the difference train<>total?
     val trainDuration: Minutes,
+    // val totalDuration: Minutes?,
     // trainSpeed is deprecated since Nov 2022
     // val trainSpeed: Double, // ((trainDistance / 1000) / (trainDuration / 60) / 1000) km/h
     val points: Long,
-    val twitterUrl: String?,
     val mastodonUrl: String?,
     val privateProfile: Boolean,
     val preventIndex: Boolean,
@@ -85,7 +90,6 @@ data class Train(
     val distance: Metres,
     val points: Long,
     val duration: Minutes,
-    // val speed: Double,
     val manualDeparture: String?,
     val manualArrival: String?,
     val origin: TrainOriginOrDestination,
@@ -113,14 +117,31 @@ data class Event(
     val url: String?,
     val begin: String,
     val end: String,
-    val station: EventStation?
+    val station: EventStation?,
+)
+
+@Serializable
+data class Client(
+    val id: Long,
+    val name: String,
+    val privacyPolicyUrl: String?,
+)
+
+@Serializable
+data class UserDetails(
+    val id: Long,
+    val displayName: String,
+    val username: String,
+    val profilePicture: String,
+    val mastodonUrl: String?,
+    val preventIndex: Boolean
 )
 
 @Serializable
 data class Status(
     val id: Long,
     val body: String,
-    val type: String,
+    // bodyMentions: []
     val user: Long,
     val username: String,
     val profilePicture: String,
@@ -130,9 +151,12 @@ data class Status(
     val likes: Long,
     val liked: Boolean,
     val isLikable: Boolean,
+    // val client: Client?,
     val createdAt: String,
     val train: Train,
     val event: Event?,
+    // val userDetails: UserDetails,
+    // tags: []
 )
 
 @Serializable
@@ -166,7 +190,7 @@ data class Trip(
     val journeyNumber: Long?,
     val origin: TripOriginOrDestination,
     val destination: TripOriginOrDestination,
-    val stopovers: Array<Stopover>
+    val stopovers: Array<Stopover>,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
